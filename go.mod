@@ -4,7 +4,7 @@ go 1.23.4
 
 require (
 	github.com/K-Phoen/grabana v0.22.2
-	github.com/docker/docker v27.4.1+incompatible
+	github.com/docker/docker v27.5.1+incompatible
 	github.com/docker/go-connections v0.5.0
 	github.com/go-openapi/runtime v0.28.0
 	github.com/go-openapi/strfmt v0.23.0
