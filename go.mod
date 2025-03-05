@@ -12,7 +12,7 @@ require (
 	github.com/grafana/grafana-foundation-sdk/go v0.0.0-20241031124839-dd60a15e7a2b
 	github.com/grafana/grafana-openapi-client-go v0.0.0-20241126111151-59d2d35e24eb
 	github.com/testcontainers/testcontainers-go v0.34.0
-	github.com/urfave/cli/v2 v2.27.5
+	github.com/urfave/cli/v2 v2.27.6
 )
 
 require (
