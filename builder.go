@@ -5,13 +5,13 @@ import (
 	"slices"
 
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
-type DashboardCreator func(folderName string, c *cli.Context) ([]dashboard.Dashboard, error)
+type DashboardCreator func(folderName string, c *cli.Command) ([]dashboard.Dashboard, error)
 
 func DashboardBuilder(d DashboardCreator) Option {
-	return func(runner *Runner, app *cli.App) error {
+	return func(runner *Runner, app *cli.Command) error {
 		if runner.Dashboard != nil {
 			return fmt.Errorf("Dashboard already set")
 		}
@@ -21,7 +21,7 @@ func DashboardBuilder(d DashboardCreator) Option {
 }
 
 func DefaultDashboardCliFlagValue(key CliValues, value string) Option {
-	return func(runner *Runner, app *cli.App) error {
+	return func(runner *Runner, app *cli.Command) error {
 		for _, c := range app.Commands {
 			if c.Name == "dashboard" {
 				for _, f := range c.Flags {
@@ -36,7 +36,7 @@ func DefaultDashboardCliFlagValue(key CliValues, value string) Option {
 						strFlag.Value = value
 					}
 				}
-				for _, s := range c.Subcommands {
+				for _, s := range c.Commands {
 					for _, f := range s.Flags {
 						if slices.Contains(f.Names(), key) {
 							strFlag, ok := f.(*cli.StringFlag)

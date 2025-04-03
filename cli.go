@@ -33,7 +33,7 @@ import (
 	goapi "github.com/grafana/grafana-openapi-client-go/client"
 	"github.com/grafana/grafana-openapi-client-go/models"
 
-	"github.com/urfave/cli/v2"
+	"github.com/urfave/cli/v3"
 )
 
 type CliValues = string
@@ -52,7 +52,7 @@ const (
 //go:embed prometheus.yml.tmpl
 var prometheusTmpl []byte
 
-type Option func(runner *Runner, app *cli.App) error
+type Option func(runner *Runner, app *cli.Command) error
 
 type Runner struct {
 	cfg       *goapi.TransportConfig
@@ -60,7 +60,7 @@ type Runner struct {
 	Dashboard DashboardCreator
 }
 
-func NewCli(appName string, options ...Option) (*cli.App, error) {
+func NewCli(appName string, options ...Option) (*cli.Command, error) {
 	plugins.RegisterDefaultPlugins()
 	runner := Runner{}
 
@@ -68,24 +68,24 @@ func NewCli(appName string, options ...Option) (*cli.App, error) {
 
 		&cli.StringFlag{
 			Name:    CliServer,
-			EnvVars: []string{GetFlagEnvByFlagName(CliServer, appName)},
+			Sources: cli.EnvVars(GetFlagEnvByFlagName(CliServer, appName)),
 			Usage:   "grafana url",
 		},
 		&cli.StringFlag{
 			Name:     CliApiKey,
-			EnvVars:  []string{GetFlagEnvByFlagName(CliApiKey, appName)},
+			Sources:  cli.EnvVars(GetFlagEnvByFlagName(CliApiKey, appName)),
 			Required: true,
 			Usage:    "grafana api key",
 		},
 		&cli.StringFlag{
 			Name:    CliApiBasePath,
-			EnvVars: []string{GetFlagEnvByFlagName(CliApiBasePath, appName)},
+			Sources: cli.EnvVars(GetFlagEnvByFlagName(CliApiBasePath, appName)),
 			Value:   "/api",
 			Usage:   "Base Path",
 		},
 	}
 
-	app := &cli.App{
+	app := &cli.Command{
 		Usage: fmt.Sprintf("%s-grafana sdk cli", appName),
 		Commands: []*cli.Command{
 			{
@@ -94,11 +94,11 @@ func NewCli(appName string, options ...Option) (*cli.App, error) {
 				Flags: []cli.Flag{
 					&cli.StringFlag{
 						Name:    CliFolderName,
-						EnvVars: []string{GetFlagEnvByFlagName(CliFolderName, appName)},
+						Sources: cli.EnvVars(GetFlagEnvByFlagName(CliFolderName, appName)),
 						Usage:   "GrafanaFolder to create dashboards",
 					},
 				},
-				Subcommands: []*cli.Command{
+				Commands: []*cli.Command{
 					{
 						Name:   "apply",
 						Before: runner.Before,
@@ -123,7 +123,7 @@ func NewCli(appName string, options ...Option) (*cli.App, error) {
 			{
 				Name:   "dev",
 				Before: runner.BeforeDev,
-				Subcommands: []*cli.Command{
+				Commands: []*cli.Command{
 					{
 						Name:   "init",
 						Usage:  "Generate template prometheus folder/file to configure scrape stuff for local dev server (DO NOT move this files and start dev server from same path)",
@@ -135,18 +135,18 @@ func NewCli(appName string, options ...Option) (*cli.App, error) {
 						Flags: []cli.Flag{
 							&cli.StringFlag{
 								Name:     CliDevDatasourceName,
-								EnvVars:  []string{GetFlagEnvByFlagName(CliDevDatasourceName, appName)},
+								Sources:  cli.EnvVars(GetFlagEnvByFlagName(CliDevDatasourceName, appName)),
 								Aliases:  []string{"datasource"},
 								Required: true,
 							},
 							&cli.StringFlag{
 								Name:    CliDevSubnet,
-								EnvVars: []string{GetFlagEnvByFlagName(CliDevSubnet, appName)},
+								Sources: cli.EnvVars(GetFlagEnvByFlagName(CliDevSubnet, appName)),
 								Value:   "192.168.192.0/20",
 							},
 							&cli.StringFlag{
 								Name:    CliDevGateway,
-								EnvVars: []string{GetFlagEnvByFlagName(CliDevGateway, appName)},
+								Sources: cli.EnvVars(GetFlagEnvByFlagName(CliDevGateway, appName)),
 								Value:   "192.168.192.1",
 							},
 						},
@@ -165,11 +165,13 @@ func NewCli(appName string, options ...Option) (*cli.App, error) {
 	return app, nil
 }
 
-func (r *Runner) BeforeDev(c *cli.Context) error { return nil }
-func (r *Runner) Before(c *cli.Context) error {
+func (r *Runner) BeforeDev(ctx context.Context, c *cli.Command) (context.Context, error) {
+	return ctx, nil
+}
+func (r *Runner) Before(ctx context.Context, c *cli.Command) (context.Context, error) {
 	p, err := url.Parse(c.String(CliServer))
 	if err != nil {
-		return fmt.Errorf("%s is not a valid url: %w", c.String(CliServer), err)
+		return ctx, fmt.Errorf("%s is not a valid url: %w", c.String(CliServer), err)
 	}
 
 	cfg := &goapi.TransportConfig{
@@ -185,10 +187,10 @@ func (r *Runner) Before(c *cli.Context) error {
 	r.cfg = cfg
 	r.client = client
 
-	return nil
+	return ctx, nil
 }
 
-func (r *Runner) Apply(c *cli.Context) error {
+func (r *Runner) Apply(ctx context.Context, c *cli.Command) error {
 	foldername := c.String(CliFolderName)
 	_, err := r.client.Folders.GetFolderByUID(foldername)
 	if err != nil {
@@ -201,7 +203,7 @@ func (r *Runner) Apply(c *cli.Context) error {
 		}
 	}
 
-	dashboards, err := r.getDashboards(c)
+	dashboards, err := r.getDashboards(ctx, c)
 	if err != nil {
 		return fmt.Errorf("failed apply Dashboard %w", err)
 	}
@@ -227,8 +229,8 @@ func (r *Runner) Apply(c *cli.Context) error {
 	return nil
 }
 
-func (r *Runner) Plan(c *cli.Context) error {
-	dashboards, err := r.getDashboards(c)
+func (r *Runner) Plan(ctx context.Context, c *cli.Command) error {
+	dashboards, err := r.getDashboards(ctx, c)
 	if err != nil {
 		return fmt.Errorf("failed plan %w ", err)
 	}
@@ -241,8 +243,8 @@ func (r *Runner) Plan(c *cli.Context) error {
 	}
 	return nil
 }
-func (r *Runner) Destroy(c *cli.Context) error {
-	dashboards, err := r.getDashboards(c)
+func (r *Runner) Destroy(ctx context.Context, c *cli.Command) error {
+	dashboards, err := r.getDashboards(ctx, c)
 	if err != nil {
 		return fmt.Errorf("failed destroy: %w", err)
 	}
@@ -265,7 +267,7 @@ func (r *Runner) Destroy(c *cli.Context) error {
 	return nil
 }
 
-func (r *Runner) getDashboards(c *cli.Context) ([]dashboard.Dashboard, error) {
+func (r *Runner) getDashboards(ctx context.Context, c *cli.Command) ([]dashboard.Dashboard, error) {
 	foldername := c.String(CliFolderName)
 	dashboards, err := r.Dashboard(foldername, c)
 	if err != nil {
@@ -274,7 +276,7 @@ func (r *Runner) getDashboards(c *cli.Context) ([]dashboard.Dashboard, error) {
 	return dashboards, nil
 }
 
-func (r *Runner) InitDev(c *cli.Context) error {
+func (r *Runner) InitDev(ctx context.Context, c *cli.Command) error {
 	err := EnsureDir("./prometheus")
 	if err != nil {
 		return err
@@ -289,10 +291,10 @@ func (r *Runner) InitDev(c *cli.Context) error {
 	return nil
 }
 func DefaultDevRunDataSource(value string) Option {
-	return func(runner *Runner, app *cli.App) error {
+	return func(runner *Runner, app *cli.Command) error {
 		for _, c := range app.Commands {
 			if c.Name == "dev" {
-				for _, sc := range c.Subcommands {
+				for _, sc := range c.Commands {
 					if sc.Name == "run" {
 						for _, f := range sc.Flags {
 							if slices.Contains(f.Names(), CliDevDatasourceName) {
@@ -314,14 +316,13 @@ func DefaultDevRunDataSource(value string) Option {
 	}
 }
 
-func (r *Runner) startDev(c *cli.Context) error {
-	err := r.InitDev(c)
+func (r *Runner) startDev(ctx context.Context, c *cli.Command) error {
+	err := r.InitDev(ctx, c)
 	if err != nil {
 		return err
 	}
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, syscall.SIGINT, syscall.SIGTERM)
-	ctx := context.Background()
 	pwd, err := os.Getwd()
 	if err != nil {
 		return err
