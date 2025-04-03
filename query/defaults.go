@@ -6,20 +6,20 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/prometheus"
 )
 
-func PrometheusQuery(query string, legend string) *prometheus.DataqueryBuilder {
+func PrometheusQuery(query, legend string) *prometheus.DataqueryBuilder {
 	return prometheus.NewDataqueryBuilder().
 		Expr(query).
 		LegendFormat(legend)
 }
 
-func TablePrometheusQuery(query string, refID string) *prometheus.DataqueryBuilder {
+func TablePrometheusQuery(query, refID string) *prometheus.DataqueryBuilder {
 	return prometheus.NewDataqueryBuilder().
 		Expr(query).
 		Format(prometheus.PromQueryFormatTable).
 		RefId(refID)
 }
 
-func QueryVariable(name string, label string, query string, datasource dashboard.DataSourceRef, all, allSelected bool) *dashboard.QueryVariableBuilder {
+func QueryVariable(name, label, query string, datasource dashboard.DataSourceRef, all, allSelected, multi bool) *dashboard.QueryVariableBuilder {
 	res := dashboard.NewQueryVariableBuilder(name).
 		Label(label).
 		Query(dashboard.StringOrMap{String: cog.ToPtr[string](query)}).
@@ -34,7 +34,7 @@ func QueryVariable(name string, label string, query string, datasource dashboard
 	res = res.
 		Refresh(dashboard.VariableRefreshOnTimeRangeChanged).
 		Sort(dashboard.VariableSortAlphabeticalAsc).
-		Multi(true).
-		IncludeAll(true)
+		Multi(multi).
+		IncludeAll(all)
 	return res
 }
