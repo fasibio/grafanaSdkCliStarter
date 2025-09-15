@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
@@ -16,7 +15,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/K-Phoen/grabana"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
@@ -435,15 +433,15 @@ func (r *Runner) startDev(ctx context.Context, c *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("error create prometheus datasource at grafana: %w", err)
 	}
-	grabanaClient := grabana.NewClient(&http.Client{}, grafanaUrl, grabana.WithBasicAuth("admin", "admin"))
-	apiKey, err := grabanaClient.CreateAPIKey(ctx, grabana.CreateAPIKeyRequest{
-		Name:          "Grabana_debug",
-		Role:          grabana.AdminRole,
-		SecondsToLive: 0,
-	})
+
+	grabanaClient := NewGrafanaAddOn(grafanaUrl, "admin", "admin")
+
+	apiKey, err := grabanaClient.CreateAPIKey("debug", "test")
+
 	if err != nil {
 		return fmt.Errorf("error create grafana apikey: %w", err)
 	}
+
 	fmt.Printf("Prometheus endpoint: %s \n", prometheusUrl)
 	fmt.Printf("\tReload Config: curl -s -XPOST %s/-/reload\n ", prometheusUrl)
 	fmt.Printf("Grafana endpoint: %s \n", grafanaUrl)
