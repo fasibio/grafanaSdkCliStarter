@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
@@ -15,11 +16,10 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/go-connections/nat"
 	"github.com/google/uuid"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
 	"github.com/testcontainers/testcontainers-go"
 	testContainerNetwork "github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/grafana-foundation-sdk/go/cog/plugins"
 	"github.com/grafana/grafana-foundation-sdk/go/dashboard"
 	goapi "github.com/grafana/grafana-openapi-client-go/client"
+	"github.com/grafana/grafana-openapi-client-go/client/service_accounts"
 	"github.com/grafana/grafana-openapi-client-go/models"
 
 	"github.com/urfave/cli/v3"
@@ -329,8 +330,8 @@ func (r *Runner) startDev(ctx context.Context, c *cli.Command) error {
 		testContainerNetwork.WithIPAM(&network.IPAM{
 			Config: []network.IPAMConfig{
 				{
-					Subnet:  c.String(CliDevSubnet),
-					Gateway: c.String(CliDevGateway),
+					Subnet:  netip.MustParsePrefix(c.String(CliDevSubnet)),
+					Gateway: netip.MustParseAddr(c.String(CliDevGateway)),
 				},
 			},
 		}),
@@ -361,7 +362,7 @@ func (r *Runner) startDev(ctx context.Context, c *cli.Command) error {
 		},
 		Privileged: true,
 		Networks:   []string{newNetwork.Name},
-		WaitingFor: wait.ForListeningPort(nat.Port(prometheusPort)),
+		WaitingFor: wait.ForListeningPort(prometheusPort),
 	}
 	prometheusC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req,
@@ -381,7 +382,7 @@ func (r *Runner) startDev(ctx context.Context, c *cli.Command) error {
 		Image:        "grafana/grafana:latest",
 		ExposedPorts: []string{grafanaPort},
 		Networks:     []string{newNetwork.Name},
-		WaitingFor:   wait.ForListeningPort(nat.Port(grafanaPort)),
+		WaitingFor:   wait.ForListeningPort(grafanaPort),
 	}
 	grafanaC, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: req2,
@@ -396,16 +397,16 @@ func (r *Runner) startDev(ctx context.Context, c *cli.Command) error {
 		}
 	}()
 
-	grafanaRealPort, err := grafanaC.MappedPort(ctx, nat.Port(grafanaPort))
+	grafanaRealPort, err := grafanaC.MappedPort(ctx, grafanaPort)
 	if err != nil {
 		return fmt.Errorf("unable to get mapped grafana port: %w", err)
 	}
 
-	grafanaUrl, err := grafanaC.PortEndpoint(ctx, nat.Port(grafanaPort), "http")
+	grafanaUrl, err := grafanaC.PortEndpoint(ctx, grafanaPort, "http")
 	if err != nil {
 		return fmt.Errorf("error get grafana endpoint: %w", err)
 	}
-	prometheusUrl, err := prometheusC.PortEndpoint(ctx, nat.Port(prometheusPort), "http")
+	prometheusUrl, err := prometheusC.PortEndpoint(ctx, prometheusPort, "http")
 	if err != nil {
 		return fmt.Errorf("error get prometheus endpoint: %w", err)
 	}
@@ -433,13 +434,23 @@ func (r *Runner) startDev(ctx context.Context, c *cli.Command) error {
 	if err != nil {
 		return fmt.Errorf("error create prometheus datasource at grafana: %w", err)
 	}
-
-	grabanaClient := NewGrafanaAddOn(grafanaUrl, "admin", "admin")
-
-	apiKey, err := grabanaClient.CreateAPIKey("debug", "test")
-
+	sa, err := client.ServiceAccounts.CreateServiceAccount(&service_accounts.CreateServiceAccountParams{Body: &models.CreateServiceAccountForm{
+		Name:       "Grafana_debug",
+		Role:       "Admin",
+		IsDisabled: false,
+	}})
 	if err != nil {
-		return fmt.Errorf("error create grafana apikey: %w", err)
+		return fmt.Errorf("unable to create serviceaccount %w", err)
+	}
+	sat, err := client.ServiceAccounts.CreateToken(&service_accounts.CreateTokenParams{
+		ServiceAccountID: sa.Payload.ID,
+		Body: &models.AddServiceAccountTokenCommand{
+			Name:          "Superuser",
+			SecondsToLive: 0,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("unable to create serviceaccount token %w", err)
 	}
 
 	fmt.Printf("Prometheus endpoint: %s \n", prometheusUrl)
@@ -448,8 +459,8 @@ func (r *Runner) startDev(ctx context.Context, c *cli.Command) error {
 	fmt.Printf("\tGrafana user: admin \n")
 	fmt.Printf("\tGrafana password: admin \n")
 	fmt.Printf("\tPrometheus Datasourcename: %s\n", c.String(CliDevDatasourceName))
-	fmt.Printf("\tApi key: %s \n", apiKey)
-	fmt.Printf("Simple run\n go run . dashboard apply --server %s --apikey %s \n", grafanaUrl, apiKey)
+	fmt.Printf("\tApi key: %s \n", sat.Payload.Key)
+	fmt.Printf("Simple run\n go run . dashboard apply --server %s --apikey %s \n", grafanaUrl, sat.Payload.Key)
 	<-done
 	return nil
 }
